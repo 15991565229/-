@@ -1,0 +1,217 @@
+#include<stdio.h>
+#include<stdio.h>
+#include<memory.h>
+#define PN 5
+typedef unsigned int U32;
+typedef int INT;
+typedef enum PROCESSSTATE
+{
+	READY,
+	BLOCK,
+	RUN,
+	OVER
+} PROCESSSTATE;
+typedef struct PCB
+{
+	U32 id;
+	INT priority;
+	U32 cputime;
+	U32 alltime;
+	INT startblock;
+	INT blocktime;
+	PROCESSSTATE state;
+	struct PCB* next;
+}PCB;
+PCB base_processes_data[PN] = {
+	{0,9,0,3,2,3,READY,NULL},
+	{1,38,0,3,-1,0,READY,NULL},
+	{2,30,0,6,-1,0,READY,NULL},
+	{3,29,0,3,-1,0,READY,NULL},
+	{4,0,0,4,-1,0,READY,NULL},
+};
+PCB processes[PN] = {
+   {0,9,0,3,0,0,READY,NULL},
+   {1,38,0,3,0,0,READY,NULL},
+   {2,30,0,6,0,0,READY,NULL},
+   {3,29,0,3,0,0,READY,NULL},
+   {4,0,0,4,0,0,READY,NULL},
+};
+PCB* ready_queue = NULL;
+PCB* block_queue = NULL;
+U32 running_pid = 0xFFFFFFFF;
+void init_ready_link()
+{
+	PCB* node = &processes[0];
+	ready_queue = node;
+	PCB* current = ready_queue;
+	for (int i = 1; i < PN; i++)
+	{
+		node = &processes[i];
+		current->next = node;
+		current = current->next;
+	}
+}
+PCB* get_highest_prio_process()
+{
+	PCB* highest_prio_process = NULL;
+	INT highest_prio = -1;
+	PCB* current = ready_queue;
+	while (current != NULL)
+	{
+		if (current->priority > highest_prio)
+		{
+			highest_prio = current->priority;
+			highest_prio_process = current;
+		}
+		current = current->next;
+	}
+	return highest_prio_process;
+}
+void print_processes()
+{
+	printf("\n\n");
+	printf("PUNNING PROG: %d\n", running_pid);
+	printf("READY QUEUE: ");
+	PCB* current = ready_queue;
+	while (current != NULL)
+	{
+		printf("->");
+		printf("%d", current->id);
+		current = current->next;
+	}
+	printf("\n");
+	printf("BLOCK QUEUE: ");
+	current = block_queue;
+	while(current != NULL)
+	{
+		printf("->");
+		printf("%d", current->id);
+		current = current->next;
+	}
+	printf("\n");
+	printf("STATE: 0 -- READY;1 -- BLOCK; 2 -- RUN; 3 -- OVER.\N");
+	printf("===========================================================================\n");
+	printf("ID    PRIORITY     CPUTIME    ALLTIME     STAETBLOCK     BLOCKTIME    STATE\n");
+	for (U32 i = 0; i < PN; i++)
+	{
+		printf("%2d    %8d     %7d      %7d      %10d     %9d      %5d\n",
+			processes[i].id, processes[i].priority, processes[i].cputime, processes[i].alltime,
+			processes[i].startblock, processes[i].blocktime, processes[i].state);
+	}
+}
+void update_priority()
+{
+	PCB* current = ready_queue;
+	while (current != NULL)
+	{
+		current->priority += 1;
+		current = current->next;
+	}
+}
+void remove_process_from_link(PCB** link, U32 pid)
+{
+	PCB* current = *link;
+	PCB* pre = *link;
+	while (current != NULL)
+	{
+		if (current->id == pid)
+		{
+			if (pre->id == current->id)
+			{
+				*link = current->next;
+				break;
+			}
+			pre->next = current->next;
+			break;
+		}
+		pre = current;
+		current = current->next;
+	}
+}
+void insert_process_to_link(PCB** link, U32 pid)
+{
+	PCB* node = &processes[pid];
+	if (link == NULL)
+	{
+		*link = node;
+		return;
+	}
+	node->next = *link;
+	*link = node;
+	return;
+}
+void refresh_block_time()
+{
+	PCB* current = block_queue;
+	while (current != NULL)
+	{
+		current->blocktime++;
+		current = current->next;
+	}
+}
+int main()
+{
+	init_ready_link();
+	U32 timeslice = 0;
+	while (1)
+	{
+		timeslice++;
+		PCB* highest_prio_process = get_highest_prio_process();
+		if (highest_prio_process == NULL)
+		{
+			break;
+		}
+		U32 tmip = highest_prio_process->id;
+		remove_process_from_link(&ready_queue, highest_prio_process->id);
+		running_pid = highest_prio_process->id;
+		highest_prio_process->startblock++;
+		highest_prio_process->cputime++;
+		highest_prio_process->alltime++;
+		highest_prio_process->state = RUN;
+		highest_prio_process->priority -= 3;
+		update_priority();
+		refresh_block_time();
+		print_processes();
+		if (highest_prio_process->startblock = base_processes_data[highest_prio_process->id].startblock)
+		{
+			highest_prio_process->startblock = 0;
+			highest_prio_process->blocktime = 0;
+			highest_prio_process->state = BLOCK;
+			insert_process_to_link(&block_queue, highest_prio_process->id);
+		}
+		PCB* current = block_queue;
+		U32 current_id = 0xffffffff;
+		while (current != NULL)
+		{
+			if (current->blocktime == base_processes_data[current->id].blocktime)
+			{
+				current->startblock = 0;
+				current->blocktime = 0; 
+				current->state = READY;
+				insert_process_to_link(&ready_queue, current->id);
+				current_id = current->id;
+				current = current->next;
+				remove_process_from_link(&block_queue, current_id);
+			}
+			else
+			{
+				current = current->next;
+			}
+		}
+		if ((processes[running_pid].alltime != 0) && (processes[running_pid].state != BLOCK))
+		{
+			processes[running_pid].state = READY;
+			insert_process_to_link(&ready_queue, running_pid);
+		}
+		else if (processes[running_pid].alltime == 0)
+		{
+			processes[running_pid].state = OVER;
+		}
+		else
+		{
+			;
+		}
+	}
+	print_processes();
+	return 0;
+}
